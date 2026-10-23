@@ -1,0 +1,5 @@
+[install]
+# Ultimate dedupes every top-level package for extensions outside the clone
+# (server/vite-extensions.ts), so only direct dependencies may sit at the top,
+# as in pnpm's layout.
+linker = "isolated"

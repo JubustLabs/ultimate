@@ -61,5 +61,13 @@
   "engines": {
     "node": ">=26"
   },
-  "packageManager": "pnpm@11.8.0"
+  "packageManager": "bun@1.4.3",
+  "overrides": {
+    "vite": "8.3.5"
+  },
+  "patchedDependencies": {
+    "@earendil-works/chord@1.4.0": "patches/@earendil-works__chord@1.4.0.patch",
+    "@earendil-works/pi-claude-code@github:earendil-works/pi-claude-code#70abb65": "patches/@earendil-works__pi-claude-code@0.1.0.patch",
+    "@earendil-works/pi-durable@1.4.0": "patches/@earendil-works__pi-durable@1.4.0.patch"
+  }
 }
