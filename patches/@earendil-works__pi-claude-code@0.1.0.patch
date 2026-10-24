@@ -1,8 +1,36 @@
 diff --git a/src/claude-cli.ts b/src/claude-cli.ts
-index 6c0595e212349b18f3d980cd2de5ea07e8b5ab65..c5e47effcec94e266ae31abe0842c2e9681449bc 100644
+index 6c0595e212349b18f3d980cd2de5ea07e8b5ab65..d03ceea0f0ac8149997bb31b5132b748336b8998 100644
 --- a/src/claude-cli.ts
 +++ b/src/claude-cli.ts
-@@ -544,15 +544,23 @@ function setReplayCacheBreakpoints(messages: NativeRequestMessage[]): void {
+@@ -410,10 +410,24 @@ class AsyncQueue<T> {
+   }
+ }
+ 
++/**
++ * Jubust: a loopback ANTHROPIC_BASE_URL is a local account router in front of
++ * Claude subscriptions, such as better-ccflare. It becomes the turn relay's
++ * upstream; Claude Code itself still talks only to the relay.
++ */
++function loopbackBaseUrl(env: Record<string, string | undefined>): string | undefined {
++  const value = env.ANTHROPIC_BASE_URL;
++  if (!value || !URL.canParse(value)) return undefined;
++  return ["127.0.0.1", "localhost"].includes(new URL(value).hostname) ? value : undefined;
++}
++
++function upstreamUrl(input: RunClaudeInput, env: Record<string, string>): string {
++  return input.upstreamUrl ?? loopbackBaseUrl(env) ?? "https://api.anthropic.com";
++}
++
+ function conflictingEnvironment(env: Record<string, string>): string[] {
+-  const conflicts = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "ANTHROPIC_FOUNDRY_API_KEY"].filter(
+-    (key) => !!env[key],
+-  );
++  const conflicts = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_FOUNDRY_API_KEY"].filter((key) => !!env[key]);
++  if (env.ANTHROPIC_BASE_URL && !loopbackBaseUrl(env)) conflicts.push("ANTHROPIC_BASE_URL");
+   for (const key of ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY"]) {
+     if (envFlagEnabled(env[key])) conflicts.push(key);
+   }
+@@ -544,15 +558,23 @@ function setReplayCacheBreakpoints(messages: NativeRequestMessage[]): void {
    const userIndexes = messages
      .map((message, index) => (message.role === "user" ? index : -1))
      .filter((index) => index >= 0);
@@ -33,7 +61,7 @@ index 6c0595e212349b18f3d980cd2de5ea07e8b5ab65..c5e47effcec94e266ae31abe0842c2e9
    }
    const final = messages.at(-1);
    if (final) setCacheBreakpoint(final);
-@@ -642,6 +650,11 @@ export function rewriteInitialRequest(
+@@ -642,6 +664,11 @@ export function rewriteInitialRequest(
    };
    let messages = payload.messages;
    const first = messages?.[0];
@@ -45,7 +73,7 @@ index 6c0595e212349b18f3d980cd2de5ea07e8b5ab65..c5e47effcec94e266ae31abe0842c2e9
    if (first?.role !== "user" || !Array.isArray(first.content)) {
      throw new Error("Claude Code request is missing its initial user message");
    }
-@@ -666,9 +679,11 @@ export function rewriteInitialRequest(
+@@ -666,9 +693,11 @@ export function rewriteInitialRequest(
    if (nativeSystemInjections) {
      messages = injectNativeSystemMessages(messages!, nativeSystemInjections);
      payload.messages = messages;
@@ -58,7 +86,13 @@ index 6c0595e212349b18f3d980cd2de5ea07e8b5ab65..c5e47effcec94e266ae31abe0842c2e9
  
    return Buffer.from(JSON.stringify(payload));
  }
-@@ -726,6 +741,20 @@ function launchPlan(input: RunClaudeInput): ClaudeLaunchPlan {
+@@ -721,11 +750,25 @@ function launchPlan(input: RunClaudeInput): ClaudeLaunchPlan {
+       model: input.model,
+       systemPrompt: input.systemPrompt,
+       timeoutMs,
+-      upstreamUrl: input.upstreamUrl ?? "https://api.anthropic.com",
++      upstreamUrl: upstreamUrl(input, env),
+     }),
    };
  }
  
@@ -79,7 +113,16 @@ index 6c0595e212349b18f3d980cd2de5ea07e8b5ab65..c5e47effcec94e266ae31abe0842c2e9
  class ClaudeProcess {
    busy = false;
    readonly createdAt = Date.now();
-@@ -976,11 +1005,7 @@ class ClaudeProcess {
+@@ -769,7 +812,7 @@ class ClaudeProcess {
+         writeFile(systemPath, input.systemPrompt, "utf8"),
+       ]);
+ 
+-      relay = new TurnRelay(input.upstreamUrl ?? "https://api.anthropic.com", plan.timeoutMs);
++      relay = new TurnRelay(upstreamUrl(input, plan.env), plan.timeoutMs);
+       const env = { ...plan.env, ANTHROPIC_BASE_URL: await relay.start() };
+       const mcp = {
+         mcpServers: {
+@@ -976,11 +1019,7 @@ class ClaudeProcess {
          message = assistants.at(-1);
        }
  
